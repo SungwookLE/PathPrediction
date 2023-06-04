@@ -2,7 +2,7 @@
 const_vel_train_test.py runs a constant velocity baseline.
 
 Example usage:
-    python const_vel_test.py --test_features features/forecasted_features_test.pkl --obs_eln 20 --pred_len 30 --traj_save_path forecasted_trajectories/const_vel.pkl
+    python const_vel_train_test.py.py --test_features features/forecasting_features_train.pkl --obs_len 20 --pred_len 30 --traj_save_path forecasted_trajectories/const_vel.pkl
 """
 
 import argparse
@@ -51,13 +51,15 @@ def get_mean_velocity(coords: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     Returns:
         Mean velocity along x and y
     """
+
+    #coords.shape = (100,20,2)
     vx, vy = (
-        np.zeros((coords.shape[0], coords.shape[1] -1)),
-        np.zeros((coords.shape[0], coords.shape[1] -1)),
+        np.zeros((coords.shape[0], coords.shape[1] -1)), # vx.shape = (100, 19)
+        np.zeros((coords.shape[0], coords.shape[1] -1)), # vy.shape = (100, 19)
     )
 
     for i in range(1, coords.shape[1]):
-        vx[:, i-1] = (coords[:, i, 0] - coords[:, i-1, 0]) / 0.1
+        vx[:, i-1] = (coords[:, i, 0] - coords[:, i-1, 0]) / 0.1 
         vy[:, i-1] = (coords[:, i, 1] - coords[:, i-1, 1]) / 0.1
     
     vx = np.mean(vx, axis=1)
@@ -80,13 +82,14 @@ def predict(obs_trajectory: np.ndarray, vx: np.ndarray, vy: np.ndarray,
         pred_trajectory: Future trajectory
          
     """
-    pred_trajectory = np.zeros((obs_trajectory.shape[0], args.pred_len, 2))
+    pred_trajectory = np.zeros((obs_trajectory.shape[0], args.pred_len, 2)) # pred_trajectory.shape = (100, 30, 2)
+    
 
     prev_coords = obs_trajectory[:, -1, :]
     for i in range(args.pred_len):
         pred_trajectory[:, i, 0] = prev_coords[:, 0] + vx*0.1
         pred_trajectory[:, i, 1] = prev_coords[:, 1] + vy*0.1
-        pred_coords = pred_trajectory[:,i]
+        prev_coords = pred_trajectory[:,i]
     
     return pred_trajectory
 
@@ -103,23 +106,63 @@ def forecast_and_save_trajectory(obs_trajectory: np.ndarray,
 
     """
 
-    vx, vy = get_mean_velocity(obs_trajectory) # (6/3) obs_trajectory 데이터 형태 볼 것
-    pred_trajectory = predict(obs_trajectory, vx, vy, args) # (6/3) 데이터 형태를 모르니까 np.ndarray 인덱싱 하는 부분이 상상이 안되네
+    vx, vy = get_mean_velocity(obs_trajectory)
+    pred_trajectory = predict(obs_trajectory, vx, vy, args)
 
     forecasted_trajectories = {}
-    for i in range(pred_trajectory.shape[0]): 
-        forecasted_trajectories[seq_id[i]] = [pred_trajectory[i]] # (6/3) 어떻게 들어가는거지???
+    for i in range(pred_trajectory.shape[0]): # for i in range(100)
+        forecasted_trajectories[seq_id[i]] = [pred_trajectory[i]] 
     
     with open(args.traj_save_path, "wb") as f:
         pkl.dump(forecasted_trajectories, f)
 
 if __name__ == "__main__":
+    # python const_vel_train_test.py.py --test_features features/forecasting_features_train.pkl --obs_len 20 --pred_len 30 --traj_save_path forecasted_trajectories/const_vel.pkl
+
     args = parse_arguments()
     df = pd.read_pickle(args.test_features)
 
-    feature_idx = [FEATURE_FORMAT["X"], FEATURE_FORMAT["Y"]] # (6/3) 아마 FEATURE_FORMAT 포맷 바꿔야 할 거임
+    feature_idx = [FEATURE_FORMAT["X"], FEATURE_FORMAT["Y"]] 
     seq_id = df["SEQUENCE"].values
 
-    obs_trajectoy = np.stack(
-        df["FEATURES"].values)[:, :args.obs_len, feature_idx].astype("float") # (6/3) 이거 데이터 형태 볼 것
+    obs_trajectory = np.stack(
+        df["FEATURES"].values)[:, :args.obs_len, feature_idx].astype("float") # 총 데이터 seq_id 의 obs_len 만큼 잘른 (X,Y)
+    forecast_and_save_trajectory(obs_trajectory, seq_id, args)
     
+
+    ### for visualization (6/4)
+    from utils.baseline_utils import viz_predictions
+
+    pred_trajectories = pd.read_pickle("./forecasted_trajectories/const_vel.pkl")
+    gt_trajectory = np.stack(
+        df["FEATURES"].values)[:, -args.pred_len:, feature_idx].astype("float")
+    gt_trajectories = {}
+    for i in range(gt_trajectory.shape[0]): # for i in range(100)
+        gt_trajectories[seq_id[i]] = gt_trajectory[i] 
+
+    seq_ids = pred_trajectories.keys()
+    for seq_id in seq_ids:
+        gt_trajectory = gt_trajectories[seq_id]
+        curr_features_df = df[df["SEQUENCE"] == seq_id]
+        input_trajectory = (
+            curr_features_df["FEATURES"].values[0][:args.obs_len, [FEATURE_FORMAT["X"], FEATURE_FORMAT["Y"]]].astype("float")
+        )
+        output_trajectories = pred_trajectories[seq_id]
+        candidate_centerlines = [curr_features_df["ORACLE_CENTERLINE"].values[0]]
+
+        city_name = curr_features_df["FEATURES"].values[0][0, FEATURE_FORMAT["CITY_NAME"]]
+
+        gt_trajectory = np.expand_dims(gt_trajectory, 0)
+        input_trajectory = np.expand_dims(input_trajectory, 0)
+        output_trajectories = np.expand_dims(np.array(output_trajectories), 0)
+        candidate_centerlines = np.expand_dims(np.array(candidate_centerlines), 0)
+            
+        city_name = np.array([city_name])
+        viz_predictions(
+            input_trajectory,
+            output_trajectories,
+            gt_trajectory,
+            candidate_centerlines,
+            city_name,
+            show=True,
+        )
