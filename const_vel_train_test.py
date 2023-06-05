@@ -1,8 +1,5 @@
 """
 const_vel_train_test.py runs a constant velocity baseline.
-
-Example usage:
-    python const_vel_train_test.py.py --test_features features/forecasting_features_train.pkl --obs_len 20 --pred_len 30 --traj_save_path forecasted_trajectories/const_vel.pkl
 """
 
 import argparse
@@ -15,6 +12,7 @@ from sklearn.metrics import mean_squared_error
 
 from utils.baseline_config import FEATURE_FORMAT
 import utils.baseline_config as baseline_utils
+import re
 
 def parse_arguments():
     """Parse Arguments."""
@@ -117,7 +115,8 @@ def forecast_and_save_trajectory(obs_trajectory: np.ndarray,
         pkl.dump(forecasted_trajectories, f)
 
 if __name__ == "__main__":
-    # python const_vel_train_test.py.py --test_features features/forecasting_features_train.pkl --obs_len 20 --pred_len 30 --traj_save_path forecasted_trajectories/const_vel.pkl
+    # python const_vel_train_test.py --test_features ./data/train/features/forecasting_features_train.pkl --obs_len 20 --pred_len 30 --traj_save_path forecasted_trajectories/const_vel_train.pkl
+    # python const_vel_train_test.py --test_features ./data/test_obs/features/forecasting_features_test.pkl --obs_len 20 --pred_len 30 --traj_save_path forecasted_trajectories/const_vel_test.pkl
 
     args = parse_arguments()
     df = pd.read_pickle(args.test_features)
@@ -133,7 +132,7 @@ if __name__ == "__main__":
     ### for visualization (6/4)
     from utils.baseline_utils import viz_predictions
 
-    pred_trajectories = pd.read_pickle("./forecasted_trajectories/const_vel.pkl")
+    pred_trajectories = pd.read_pickle(args.traj_save_path)
     gt_trajectory = np.stack(
         df["FEATURES"].values)[:, -args.pred_len:, feature_idx].astype("float")
     gt_trajectories = {}
@@ -148,7 +147,12 @@ if __name__ == "__main__":
             curr_features_df["FEATURES"].values[0][:args.obs_len, [FEATURE_FORMAT["X"], FEATURE_FORMAT["Y"]]].astype("float")
         )
         output_trajectories = pred_trajectories[seq_id]
-        candidate_centerlines = [curr_features_df["ORACLE_CENTERLINE"].values[0]]
+
+        train_test_flag = re.split(r"[_.]", args.test_features)[-2] 
+        if train_test_flag == "test":
+            candidate_centerlines = curr_features_df["CANDIDATE_CENTERLINES"].values[0]
+        elif train_test_flag == "train":
+            candidate_centerlines = [curr_features_df["ORACLE_CENTERLINE"].values[0]]
 
         city_name = curr_features_df["FEATURES"].values[0][0, FEATURE_FORMAT["CITY_NAME"]]
 

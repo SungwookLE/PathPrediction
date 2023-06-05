@@ -196,7 +196,8 @@ def merge_saved_features(batch_save_dir: str) -> None:
 
 
 if __name__ == "__main__":
-    # python compute_features.py --data_dir "./data/train/data" --feature_dir "./features" --mode train 
+    # python compute_features.py --data_dir "./data/train/data" --feature_dir "./data/train/features" --mode train 
+    # python compute_features.py --data_dir "./data/test_obs/data" --feature_dir "./data/test_obs/features" --mode test --small
 
     args = parse_arguments()
     start = time.time()
@@ -206,7 +207,7 @@ if __name__ == "__main__":
     temp_save_dir = tempfile.mkdtemp()
 
     num_sequences = _FEATURES_SMALL_SIZE if args.small else len(sequences)
-
+ 
     print(f"Total {args.mode} sequences length: {num_sequences}")
     Parallel(n_jobs=-2)(delayed(load_seq_save_features)(
         i, 
