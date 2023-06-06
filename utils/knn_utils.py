@@ -96,4 +96,19 @@ class Regressor:
             (train_num_tracks, args.obs_len * num_features), order="F"
         )
 
-        #
+        # Train and Test inputs for kNN
+        test_centerlines = test_helpers["CANDIDATE_CENTERLINES"].values
+        test_nt = test_helpers["CANDIDATE_NT_DISTANCES"].values
+        test_references = test_helpers["CANDIDATE_DELTA_REFERENCES"].values
+        test_seq_ids = test_helpers["SEQUENCE"].values
+
+        test_num_tracks = test_nt.shape[0]
+
+        for curr_pred_horizon in PREDICTION_HORIZONS:
+            grid_search = baseline_utils.get_model(self, train_input, train_output, args, curr_pred_horizon)
+
+            print("Model obtained, now starting inference ...")
+
+            Parallel(
+                n_jobs=-2, verbose=5
+            )(delayed(self.infer_and_save_traj_map)) #####

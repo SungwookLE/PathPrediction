@@ -453,3 +453,50 @@ def get_data(args: Any
     }
 
     return data_dict
+
+def get_model(
+        regressor: Any,
+        train_input: np.ndarray,
+        train_output: np.ndarray,
+        args: Any,
+        pred_horizon: int,
+)-> Any:
+    """
+    Get the trained model after running grid search or load a saved one.
+
+    Args:
+        regressor: Nearest Neighbor regressor class instance
+        train_input: Input to the model
+        train_output: Ground truth for the model
+        args: Arguments passed to the baseline
+        pred_horizon: Prediction Horizon
+
+    Returns:
+        grid_search: sklearn GridSearchCV object
+    
+    """
+
+    # Load model
+    if args.test:
+
+        # Load a trained model
+        with open(args.model_path, "rb") as f:
+            grid_search = pkl.load(f)
+        print(f"## Loaded {args.model_path} ...")
+    
+    else:
+        train_num_tracks = train_input.shape[0]
+
+        # Flatten to (num_tracks x feature_size)
+        train_output_curr = train_output[:, :pred_horizon, :].reshape(
+            (train_num_tracks, pred_horizon*2), ordef="F"
+        )
+
+        # Run grid search for hyper parameter tuning
+        grid_search = regressor.run_grid_search(train_input, train_output_curr)
+        os.makedirs(os.path.dirname(args.model_path), exist_ok = True)
+        with open(args.model_path, "wb") as f:
+            pkl.dump(grid_search, f)
+        print(f"Trained model saved at... {args.model_path}")
+    
+    return grid_search

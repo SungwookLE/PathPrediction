@@ -1,2 +1,7 @@
-data/
+data/train/data/
+data/val/data/
+data/test_obs/data/
+
+Argoverse-Terms_of_Use.txt
+
 *.pyc
