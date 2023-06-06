@@ -22,6 +22,7 @@ def parse_arguments() -> Any:
         type=str,
         help="Directory where the sequences (csv files) are saved",
     )
+
     parser.add_argument(
         "--feature_dir",
         default="",
@@ -38,8 +39,8 @@ def parse_arguments() -> Any:
         "--batch_size",
         default=100,
         type=int,
-        help="Batch size for parallel computation",
-    )
+        help="Batch size for parallel computation")
+    
     parser.add_argument("--obs_len",
                         default=20,
                         type=int,
@@ -198,6 +199,8 @@ def merge_saved_features(batch_save_dir: str) -> None:
 if __name__ == "__main__":
     # python compute_features.py --data_dir "./data/train/data" --feature_dir "./data/train/features" --mode train 
     # python compute_features.py --data_dir "./data/test_obs/data" --feature_dir "./data/test_obs/features" --mode test --small
+    # python compute_features.py --data_dir "./data/val/data" --feature_dir "./data/val/features" --mode val --small
+
 
     args = parse_arguments()
     start = time.time()

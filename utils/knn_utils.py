@@ -66,4 +66,34 @@ class Regressor:
 
         return grid_search
     
-    
+    def train_and_infer_map(
+            self,
+            train_input: np.ndarray,
+            train_output: np.ndarray,
+            test_helpers: pd.DataFrame,
+            num_features: int,
+            args: Any,
+    ) -> None:
+        """
+        Train and test the model on different prediction horizons for map based Nearest Neighbors.
+
+        Args:
+            train_input (numpy array): Train input data
+            train_output (numpy array): Train ground truth data
+            test_helpers (pandas Dataframe): Test map helpers
+            num_features: Number of input features
+            args: Arguments passed to runnNNBaselines.py
+        
+        """
+        # Create a temporary directory where forecasted trajectories for all the batches will be saved
+        temp_save_dir = tempfile.mkdtemp()
+
+        print(f"Forecasted trajectories will be saved in {args.traj_save_path} ...")
+
+        # Train and Test inputs for kNN
+        train_num_tracks = train_input.shape[0]
+        train_input = train_input.reshape(
+            (train_num_tracks, args.obs_len * num_features), order="F"
+        )
+
+        #
