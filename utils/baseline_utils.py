@@ -13,6 +13,8 @@ import pandas as pd
 from shapely.geometry import Point, Polygon, LineString, LinearRing
 from shapely.affinity import affine_transform, rotate
 
+from tqdm import tqdm
+
 from utils.baseline_config import (
     BASELINE_INPUT_FEATURES,
     BASELINE_OUTPUT_FEATURES,
@@ -148,8 +150,8 @@ def viz_predictions(
             )
             [avm.draw_lane(lane_id, city_names[i]) for lane_id in lane_ids]
 
-        plt.xlim([input_[i, 0, 0]-50, target[i, -1, 0]+50])
-        plt.ylim([input_[i, 0, 1]-50, target[i, -1, 1]+50])
+        ## plt.xlim([input_[i, 0, 0]-50, target[i, -1, 0]+50])
+        ## plt.ylim([input_[i, 0, 1]-50, target[i, -1, 1]+50])
         #plt.axis("scaled")
 
         plt.xticks([])
@@ -489,7 +491,7 @@ def get_model(
 
         # Flatten to (num_tracks x feature_size)
         train_output_curr = train_output[:, :pred_horizon, :].reshape(
-            (train_num_tracks, pred_horizon*2), ordef="F"
+            (train_num_tracks, pred_horizon*2), order="F"
         )
 
         # Run grid search for hyper parameter tuning
@@ -500,3 +502,245 @@ def get_model(
         print(f"Trained model saved at... {args.model_path}")
     
     return grid_search
+
+
+def get_xy_from_nt_seq(nt_seq: np.ndarray,
+                       centerlines: List[np.ndarray]) -> np.ndarray:
+    """Convert n-t coordinates to x-y, i.e., convert from centerline curvilinear coordinates to map coordinates.
+
+    Args:
+        nt_seq (numpy array): Array of shape (num_tracks x seq_len x 2) where last dimension has 'n' (offset from centerline) and 't' (distance along centerline)
+        centerlines (list of numpy array): Centerline for each track
+    Returns:
+        xy_seq (numpy array): Array of shape (num_tracks x seq_len x 2) where last dimension contains coordinates in map frame
+
+    """
+    seq_len = nt_seq.shape[1]
+
+    # coordinates obtained by interpolating distances on the centerline
+    xy_seq = np.zeros(nt_seq.shape)
+    
+    for i in range(nt_seq.shape[0]):
+        curr_cl = centerlines[i]
+        line_string = LineString(curr_cl)
+        for time in range(seq_len):
+
+            # Project nt to xy
+            offset_from_cl = nt_seq[i][time][0]
+            dist_along_cl = nt_seq[i][time][1]
+            x_coord, y_coord = get_xy_from_nt(offset_from_cl, dist_along_cl,
+                                              curr_cl)
+
+            xy_seq[i, time, 0] = x_coord
+            xy_seq[i, time, 1] = y_coord
+
+    return xy_seq
+
+
+def get_xy_from_nt(n: float, t: float,
+                   centerline: np.ndarray) -> Tuple[float, float]:
+    """Convert a single n-t coordinate (centerline curvilinear coordinate) to absolute x-y.
+
+    Args:
+        n (float): Offset from centerline
+        t (float): Distance along the centerline
+        centerline (numpy array): Centerline coordinates
+    Returns:
+        x1 (float): x-coordinate in map frame
+        y1 (float): y-coordinate in map frame
+
+    """
+
+    line_string = LineString(centerline)
+
+    # If distance along centerline is negative, keep it to the start of line
+    point_on_cl = line_string.interpolate(
+        t) if t > 0 else line_string.interpolate(0)
+    local_ls = None
+
+
+    # Find 2 consective points on centerline such that line joining those 2 points
+    # contains point_on_cl
+    for i in range(len(centerline) - 1):
+        pt1 = centerline[i]
+        pt2 = centerline[i + 1]
+        ls = LineString([pt1, pt2])
+
+        # x_ls, y_ls = ls.xy
+        # print(pt1, pt2)
+        # plt.plot(x_ls, y_ls, color="blue")
+        # plt.plot(point_on_cl.x, point_on_cl.y, marker='o', color="red")
+        # plt.show()
+
+        if pt1[0] == pt2[0] and pt1[1] == pt2[1]:
+            # 이게 갑자기 왜 등장했지 (6/9)
+            continue
+
+        if ls.distance(point_on_cl) < 1e-8:
+            local_ls = ls
+            break
+        
+    assert local_ls is not None, "XY from N({}) T({}) not computed correctly".format(
+        n, t)
+
+    pt1, pt2 = local_ls.coords[:]
+    x0, y0 = point_on_cl.coords[0]
+
+    # Determine whether the coordinate lies on left or right side of the line formed by pt1 and pt2
+    # Find a point on either side of the line, i.e., (x1_1, y1_1) and (x1_2, y1_2)
+    # If the ring formed by (pt1, pt2, (x1_1, y1_1)) is counter clockwise, then it lies on the left
+
+    # Deal with edge cases
+    # Vertical
+    if pt1[0] == pt2[0]:
+        m = 0
+        x1_1, x1_2 = x0 + n, x0 - n
+        y1_1, y1_2 = y0, y0
+    # Horizontal
+    elif pt1[1] == pt2[1]:
+        m = float("inf")
+        x1_1, x1_2 = x0, x0
+        y1_1, y1_2 = y0 + n, y0 - n
+    # General case
+    else:
+        ls_slope = (pt2[1] - pt1[1]) / (pt2[0] - pt1[0])
+        m = -1 / ls_slope
+
+        x1_1 = x0 + n / math.sqrt(1 + m**2)
+        y1_1 = y0 + m * (x1_1 - x0)
+        x1_2 = x0 - n / math.sqrt(1 + m**2)
+        y1_2 = y0 + m * (x1_2 - x0)
+
+    # Rings formed by pt1, pt2 and coordinates computed above
+    lr1 = LinearRing([pt1, pt2, (x1_1, y1_1)])
+    lr2 = LinearRing([pt1, pt2, (x1_2, y1_2)])
+
+    # If ring is counter clockwise
+    if lr1.is_ccw:
+        x_ccw, y_ccw = x1_1, y1_1
+        x_cw, y_cw = x1_2, y1_2
+    else:
+        x_ccw, y_ccw = x1_2, y1_2
+        x_cw, y_cw = x1_1, y1_1
+
+    # If offset is positive, coordinate on the left
+    if n > 0:
+        x1, y1 = x_ccw, y_ccw
+    # Else, coordinate on the right
+    else:
+        x1, y1 = x_cw, y_cw
+
+    return x1, y1
+
+
+def normalized_to_map_coordinates(coords: np.ndarray,
+                                  translation: List[List[float]],
+                                  rotation: List[float]) -> np.ndarray:
+    """Denormalize trajectory to bring it back to map frame.
+
+    Args:
+        coords (numpy array): Array of shape (num_tracks x seq_len x 2) containing normalized coordinates
+        translation (list): Translation matrix used in normalizing trajectories
+        rotation (list): Rotation angle used in normalizing trajectories 
+    Returns:
+        _ (numpy array: Array of shape (num_tracks x seq_len x 2) containing coordinates in map frame
+
+    """
+    abs_coords = []
+    for i in range(coords.shape[0]):
+        ls = LineString(coords[i])
+
+        # Rotate
+        ls_rotate = rotate(ls, -rotation[i], origin=(0, 0))
+
+        # Translate
+        M_inv = [1, 0, 0, 1, -translation[i][4], -translation[i][5]]
+
+        ls_offset = affine_transform(ls_rotate, M_inv).coords[:]
+        abs_coords.append(ls_offset)
+
+    return np.array(abs_coords)
+
+
+def get_abs_traj(
+        input_: np.ndarray,
+        output: np.ndarray,
+        args: Any,
+        helpers: Dict[str, Any],
+        start_idx: int = None,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Get absolute trajectory reverting all the transformations.
+
+    Args:
+        input_ (numpy array): Input Trajectory with shape (num_tracks x obs_len x 2)
+        output (numpy array): Predicted Trajectory with shape (num_tracks x pred_len x 2)
+        args (Argparse): Config parameters
+        helpers (dict):Data helpers
+        start_id (int): Start index of the current batch (used in joblib). If None, then no batching.
+    Returns:            
+        input_ (numpy array): Input Trajectory in map frame with shape (num_tracks x obs_len x 2)
+        output (numpy array): Predicted Trajectory in map frame with shape (num_tracks x pred_len x 2)
+
+    """
+    obs_len = input_.shape[1]
+    pred_len = output.shape[1]
+
+    if start_idx is None:
+        s = 0
+        e = input_.shape[0]
+    else:
+        print(f"Abs Traj Done {start_idx}/{input_.shape[0]}")
+        s = start_idx
+        e = start_idx + args.joblib_batch_size
+
+    input_ = input_.copy()[s:e]
+    output = output.copy()[s:e]
+
+    # Convert relative to absolute
+    if args.use_delta:
+        reference = helpers["REFERENCE"].copy()[s:e]
+        input_[:, 0, :2] = reference
+        for i in range(1, obs_len):
+            input_[:, i, :2] = input_[:, i, :2] + input_[:, i - 1, :2]
+
+        output[:, 0, :2] = output[:, 0, :2] + input_[:, -1, :2]
+        for i in range(1, pred_len):
+            output[:, i, :2] = output[:, i, :2] + output[:, i - 1, :2]
+
+    # Convert centerline frame (n,t) to absolute frame (x,y)
+    if args.use_map:
+        centerlines = helpers["CENTERLINE"].copy()[s:e]
+        input_[:, :, :2] = get_xy_from_nt_seq(input_[:, :, :2], centerlines)
+        output[:, :, :2] = get_xy_from_nt_seq(output[:, :, :2], centerlines)
+
+    # Denormalize trajectory
+    elif args.normalize and not args.use_map:
+        translation = helpers["TRANSLATION"].copy()[s:e]
+        rotation = helpers["ROTATION"].copy()[s:e]
+        input_[:, :, :2] = normalized_to_map_coordinates(
+            input_[:, :, :2], translation, rotation)
+        output[:, :, :2] = normalized_to_map_coordinates(
+            output[:, :, :2], translation, rotation)
+        
+    return input_, output
+
+
+def merge_saved_traj(batched_dir: str, merged_file_path: str):
+    """Load saved trajectories, merge them, save the merged one, delete the individual ones.
+
+    Args:
+        batched_dir: Directory where forecasted trajectories for all the batches are saved
+        merged_file_path: Path to the pickle file where merged file is to be saved.
+    Note: batched_dir should only contain the files that are to be merged
+
+    """
+    file_names = os.listdir(batched_dir)
+    forecasted_trajectories = {}
+    for fn in file_names:
+        file_path = f"{batched_dir}/{fn}"
+        with open(file_path, "rb") as f:
+            traj = pkl.load(f)
+        forecasted_trajectories = {**forecasted_trajectories, **traj}
+        os.remove(file_path)
+    with open(merged_file_path, "wb") as f:
+        pkl.dump(forecasted_trajectories, f)
