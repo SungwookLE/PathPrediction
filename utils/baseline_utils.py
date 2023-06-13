@@ -73,6 +73,7 @@ def viz_predictions(
         plt.plot(
             target[i, :, 0],
             target[i, :, 1],
+            '--',
             color="#d33e4c",
             label="Target",
             alpha=1,
@@ -107,7 +108,7 @@ def viz_predictions(
                 output[i][j][:, 0],
                 output[i][j][:, 1],
                 color="#007672",
-                label="Predicted",
+                label=f"Predicted{j}",
                 alpha=1,
                 linewidth=3,
                 zorder=15,
@@ -150,9 +151,9 @@ def viz_predictions(
             )
             [avm.draw_lane(lane_id, city_names[i]) for lane_id in lane_ids]
 
-        ## plt.xlim([input_[i, 0, 0]-50, target[i, -1, 0]+50])
-        ## plt.ylim([input_[i, 0, 1]-50, target[i, -1, 1]+50])
-        #plt.axis("scaled")
+        plt.xlim([input_[i, 0, 0]-50, input_[i, -1, 0]+50])
+        plt.ylim([input_[i, 0, 1]-50, input_[i, -1, 1]+50])
+        # plt.axis("scaled")
 
         plt.xticks([])
         plt.yticks([])
@@ -163,7 +164,7 @@ def viz_predictions(
 
         if show:
             plt.show(block=False)
-            plt.pause(5)
+            plt.pause(2.5)
             plt.close()
 
 def validate_args(args: Any) -> bool:

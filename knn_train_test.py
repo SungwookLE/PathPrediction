@@ -10,6 +10,7 @@ import time
 
 import utils.baseline_utils as baseline_utils
 from utils.knn_utils import Regressor
+from tqdm import tqdm
 
 def parse_arguments():
     """Parse command line arguments."""
@@ -89,6 +90,14 @@ def parse_arguments():
         help="path to the pickle file where forecasted trajectories will be saved."
     )
 
+    parser.add_argument(
+        "--viz_inference",
+        required=True,
+        default="test",
+        type=str,
+        help="inferenced mode: train or test or val"
+    )
+
     return parser.parse_args()
 
 
@@ -130,7 +139,7 @@ def perform_k_nn_experiments(
         model.train_and_infer_map(
             train_val_input,
             train_val_output,
-            test_helpers,
+            test_helpers if args.viz_inference == "test" else train_helpers,
             len(baseline_utils.BASELINE_INPUT_FEATURES[baseline_key]),
             args,
         )
@@ -144,7 +153,8 @@ if __name__ =="__main__":
     python knn_train_test.py --train_features ./data/train/features/forecasting_features_train.pkl \
                              --val_features ./data/val/features/forecasting_features_val.pkl \
                              --test_features ./data/test_obs/features/forecasting_features_test.pkl \
-                             --use_map --use_delta --model_path ./model/knn.pth --traj_save_path ./forecasted_trajectories/knn_test.pkl
+                             --use_map --use_delta --model_path ./model/knn.pth --traj_save_path ./forecasted_trajectories/knn_test.pkl \
+                             --viz_inference train
     
     """
     args = parse_arguments()
@@ -160,26 +170,27 @@ if __name__ =="__main__":
     else:
         baseline_key = "none"
     
-
-    # Get data
+    #############################
+    # 1. Get data
     data_dict = baseline_utils.get_data(args, baseline_key)
     
-    #print(data_dict) ########## here (6/5)
+    #############################
+    # 2. Perform experiments (Train and Inferencing, Save result)
+    start = time.time()
+    perform_k_nn_experiments(data_dict, baseline_key)
+    end = time.time()
+    print(f"Completed experiment in {(end-start)/60.0} mins")
 
-    # Perform experiments (Train)
-    # start = time.time()
-    # perform_k_nn_experiments(data_dict, baseline_key)
-    # end = time.time()
-    # print(f"Completed experiment in {(end-start)/60.0} mins")
-
-
-    # for visualization (6/8)
+    #############################
+    # 3. for visualization (6/8)
     from utils.baseline_utils import viz_predictions
     from utils.baseline_config import FEATURE_FORMAT
-    import re
 
     feature_idx = [FEATURE_FORMAT["X"], FEATURE_FORMAT["Y"]]
-    df = data_dict["test_helpers"]
+    if args.viz_inference == "test":
+        df = pd.read_pickle(args.test_features)
+    elif args.viz_inference == "train":
+        df = pd.read_pickle(args.train_features)
 
     pred_trajectories = pd.read_pickle(args.traj_save_path)
     seq_id = df["SEQUENCE"].values
@@ -193,7 +204,7 @@ if __name__ =="__main__":
 
     seq_ids = pred_trajectories.keys()
     
-    for seq_id in seq_ids:
+    for seq_id in tqdm(seq_ids, desc="Plot the results"):
         gt_trajectory = gt_trajectories[seq_id]
         curr_features_df = df[df["SEQUENCE"] == seq_id]
         input_trajectory = (
@@ -201,7 +212,7 @@ if __name__ =="__main__":
         )
         output_trajectories = pred_trajectories[seq_id]
 
-        train_test_flag = re.split(r"[_.]", args.test_features)[-2]
+        train_test_flag = args.viz_inference 
         if train_test_flag == "test":
             candidate_centerlines = curr_features_df["CANDIDATE_CENTERLINES"].values[0]
         elif train_test_flag == "train":

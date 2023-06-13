@@ -16,6 +16,7 @@ from sklearn.neighbors import KNeighborsRegressor
 from sklearn.pipeline import Pipeline
 
 import utils.baseline_utils as baseline_utils
+from tqdm import tqdm
 
 PREDICTION_HORIZONS = [30]
 
@@ -63,6 +64,7 @@ class Regressor:
         )
 
         grid_search.fit(x,y)
+        print(f"## Train Score: {grid_search.best_estimator_.score(x,y)} ...")
 
         return grid_search
     
@@ -105,17 +107,23 @@ class Regressor:
         forecasted_trajectories = {}
 
         # Predict for each trajectory
-        for i in range(test_num_tracks):
+        for i in tqdm(range(test_num_tracks), desc='Processing to be inferenced item'):
 
             # Helpers for current track
-            test_nt_i = test_nt[i]
-            test_cl_i = test_centerlines[i]
-            test_references_i = test_references[i]
+            if args.viz_inference == "test":
+                test_nt_i = test_nt[i]
+                test_cl_i = test_centerlines[i]
+                test_references_i = test_references[i]
+
+            elif args.viz_inference == "train":
+                test_nt_i = np.expand_dims(test_nt[i], axis=0)
+                test_cl_i = np.expand_dims(test_centerlines[i], axis=0)
+                test_references_i = np.expand_dims(test_references[i], axis=0)
 
             curr_forecasted_trajectories = []
 
             # Predict using each of candidate centerlines
-            for (test_nt_i_curr_candidate, test_cl_i_curr_candidate, test_ref_i_curr_candidate) in zip(test_nt_i, test_cl_i, test_references_i):
+            for (test_nt_i_curr_candidate, test_cl_i_curr_candidate, test_ref_i_curr_candidate) in (zip(test_nt_i, test_cl_i, test_references_i)):
                 test_input = test_nt_i_curr_candidate[:args.obs_len, :].reshape((1,2 * args.obs_len),order="F")
                 # Preprocess and get neighbors
                 pipeline_steps = grid_search.best_estimator_.named_steps.keys()
@@ -136,7 +144,7 @@ class Regressor:
                         if curr_step is not None:
                             preprocessed_test_input = curr_step.transform(
                                 preprocessed_test_input)
-                            print(f"{curr_step} after shape: {preprocessed_test_input.shape}")
+                            #print(f"{curr_step} after shape: {preprocessed_test_input.shape}")
                             
 
                 ################################################################################################################
@@ -203,17 +211,25 @@ class Regressor:
 
         # Train and Test inputs for kNN
         train_num_tracks = train_input.shape[0]
+        train_input_as_inference = train_input.copy()
         train_input = train_input.reshape(
             (train_num_tracks, args.obs_len * num_features), order="F"
         )
 
         # Train and Test inputs for kNN
-        test_centerlines = test_helpers["CANDIDATE_CENTERLINES"].values
-        test_nt = test_helpers["CANDIDATE_NT_DISTANCES"].values
-        test_references = test_helpers["CANDIDATE_DELTA_REFERENCES"].values
-        test_seq_ids = test_helpers["SEQUENCE"].values
+        if args.viz_inference == "test":
+            test_centerlines = test_helpers["CANDIDATE_CENTERLINES"].values
+            test_nt = test_helpers["CANDIDATE_NT_DISTANCES"].values
+            test_references = test_helpers["CANDIDATE_DELTA_REFERENCES"].values
+            test_seq_ids = test_helpers["SEQUENCE"].values
+            test_num_tracks = test_nt.shape[0]
 
-        test_num_tracks = test_nt.shape[0]
+        elif args.viz_inference == "train":
+            test_centerlines = test_helpers["ORACLE_CENTERLINE"].values
+            test_nt = train_input_as_inference[:test_centerlines.shape[0], :]
+            test_references = test_helpers["DELTA_REFERENCE"].values
+            test_seq_ids = test_helpers["SEQUENCE"].values
+            test_num_tracks = test_nt.shape[0]
 
         for curr_pred_horizon in PREDICTION_HORIZONS:
             ################################################################################################################
