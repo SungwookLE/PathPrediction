@@ -164,7 +164,7 @@ def viz_predictions(
 
         if show:
             plt.show(block=False)
-            plt.pause(2.5)
+            plt.pause(4.5)
             plt.close()
 
 def validate_args(args: Any) -> bool:
@@ -215,7 +215,7 @@ def get_normalized_traj(df: pd.DataFrame, args: Any) -> np.ndarray:
 
     # Normalize each trajectory
     for i in range(x_coord_seq.shape[0]):
-        xy_seq = np.stack((x_coord_seq[i], y_coord_seq[i]), axis=1)
+        xy_seq = np.stack((x_coord_seq[i], y_coord_seq[i]), axis=-1)
 
         start = xy_seq[0]
 
@@ -229,7 +229,7 @@ def get_normalized_traj(df: pd.DataFrame, args: Any) -> np.ndarray:
         if end[0] == 0 and end[1] == 0:
             angle = 0.0
         elif end[0] == 0:
-            angle = -90.0 if end[1] > 0 else 90.0 # (6/5, 부호가 이게 맞나?)
+            angle = -90.0 if end[1] > 0 else 90.0 # (6/5, 부호: 역방향으로, 0도로 normalization 시켜야 하니까)
         elif end[1] == 0:
             angle = 0.0 if end[0] > 0 else 180.0
         else:
@@ -330,11 +330,10 @@ def load_and_preprocess_data(
 
         # Merge normalized trajectory and other features
         input_features_data = np.concatenate(
-            (normalized_traj_arr, input_features_data), axis =2
-        )        
+            (normalized_traj_arr, input_features_data), axis =2)        
         output_features_data = np.concatenate(
-            (normalized_traj_arr, output_features_data), axis=2
-        )
+            (normalized_traj_arr, output_features_data), axis=2)
+        
     else:
         input_feature_idx = [
             FEATURE_FORMAT[feature] for feature in input_features

@@ -145,8 +145,15 @@ def perform_k_nn_experiments(
         )
 
     else:
-        # not yet considered (6/7)
-        pass
+        print('#### Training Nearest Neighbor in absolute map frame ###')
+        model.train_and_infer_absolute(
+            train_val_input,
+            train_val_output,
+            test_input,
+            test_helpers,
+            len(baseline_utils.BASELINE_INPUT_FEATURES[baseline_key]),
+            args,
+        )
 
 if __name__ =="__main__":
     """
