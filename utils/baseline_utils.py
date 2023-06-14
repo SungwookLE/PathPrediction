@@ -565,24 +565,17 @@ def get_xy_from_nt(n: float, t: float,
     for i in range(len(centerline) - 1):
         pt1 = centerline[i]
         pt2 = centerline[i + 1]
-        ls = LineString([pt1, pt2])
-
-        # x_ls, y_ls = ls.xy
-        # print(pt1, pt2)
-        # plt.plot(x_ls, y_ls, color="blue")
-        # plt.plot(point_on_cl.x, point_on_cl.y, marker='o', color="red")
-        # plt.show()
-
         if pt1[0] == pt2[0] and pt1[1] == pt2[1]:
-            # 이게 갑자기 왜 등장했지 (6/9)
+            ls = Point(pt1) # point 
             continue
+        else:
+            ls = LineString([pt1, pt2])
 
-        if ls.distance(point_on_cl) < 1e-8:
+        if ls.geom_type == "LineString" and ls.distance(point_on_cl) < 1e-8:
             local_ls = ls
             break
         
-    assert local_ls is not None, "XY from N({}) T({}) not computed correctly".format(
-        n, t)
+    assert local_ls is not None, f"XY from N({n}) T({t}) not computed correctly"
 
     pt1, pt2 = local_ls.coords[:]
     x0, y0 = point_on_cl.coords[0]
